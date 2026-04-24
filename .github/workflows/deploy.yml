@@ -1,0 +1,36 @@
+name: Ecommerce Pipeline CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install nbformat
+
+      - name: Validate notebooks
+        run: |
+          python -c "
+          import nbformat, os, glob
+          notebooks = glob.glob('notebooks/*.ipynb')
+          for nb in notebooks:
+              with open(nb) as f:
+                  nbformat.read(f, as_version=4)
+              print(f'✓ {nb} is valid')
+          print('All notebooks validated successfully')
+          "
