@@ -9,7 +9,6 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -20,13 +19,12 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install nbformat
+        run: pip install nbformat requests
 
       - name: Validate notebooks
         run: |
           python -c "
-          import nbformat, os, glob
+          import nbformat, glob
           notebooks = glob.glob('notebooks/*.ipynb')
           for nb in notebooks:
               with open(nb) as f:
@@ -34,3 +32,88 @@ jobs:
               print(f'✓ {nb} is valid')
           print('All notebooks validated successfully')
           "
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Get Azure AD token
+        id: get_token
+        run: |
+          python -c "
+          import requests, os
+
+          tenant_id = '${{ secrets.FABRIC_TENANT_ID }}'
+          username  = '${{ secrets.FABRIC_USERNAME }}'
+          password  = '${{ secrets.FABRIC_PASSWORD }}'
+
+          url = f'https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token'
+          
+          payload = {
+              'grant_type'  : 'password',
+              'client_id'   : '00000009-0000-0000-c000-000000000000',
+              'scope'       : 'https://api.fabric.microsoft.com/.default',
+              'username'    : username,
+              'password'    : password
+          }
+
+          response = requests.post(url, data=payload)
+          token = response.json().get('access_token', '')
+          
+          if token:
+              print('✓ Azure AD token obtained successfully')
+              with open(os.environ['GITHUB_ENV'], 'a') as f:
+                  f.write(f'FABRIC_TOKEN={token}\n')
+          else:
+              print('✗ Token error:', response.json())
+              exit(1)
+          "
+
+      - name: Trigger Fabric orchestrating pipeline
+        run: |
+          python -c "
+          import requests, os
+
+          workspace_id = '${{ secrets.FABRIC_WORKSPACE_ID }}'
+          pipeline_id  = '${{ secrets.FABRIC_PIPELINE_ID }}'
+          token        = os.environ['FABRIC_TOKEN']
+
+          url = f'https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/items/{pipeline_id}/jobs/instances?jobType=Pipeline'
+
+          headers = {
+              'Authorization' : f'Bearer {token}',
+              'Content-Type'  : 'application/json'
+          }
+
+          response = requests.post(url, headers=headers, json={})
+
+          if response.status_code in [200, 202]:
+              print('✓ Fabric pipeline triggered successfully')
+              print(f'  Status: {response.status_code}')
+              print(f'  Pipeline: ecommerce_orchestrating_pipeline')
+              print(f'  Bronze → Silver → Gold running...')
+          else:
+              print(f'✗ Failed: {response.status_code}')
+              print(f'  Error: {response.text}')
+              exit(1)
+          "
+
+      - name: Send success notification
+        if: success()
+        run: |
+          echo "✓ Deployment complete"
+          echo "✓ Notebooks validated"
+          echo "✓ Fabric pipeline triggered"
+          echo "✓ Bronze → Silver → Gold running"
