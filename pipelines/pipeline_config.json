@@ -1,0 +1,7 @@
+{
+  "project": "Ecommerce Analytics",
+  "author": "Rushabh Nagar",
+  "layers": ["bronze", "silver", "gold"],
+  "schedule": "daily at 02:00 IST",
+  "notifications": "rushabhnagar2@gmail.com"
+}
